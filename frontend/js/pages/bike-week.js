@@ -183,7 +183,7 @@ async function renderBikeWeek(container) {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <template x-for="r in results" :key="r.participant_id + '-' + r.event_id">
+                                    <template x-for="(r, idx) in results" :key="idx">
                                         <tr>
                                             <td class="font-medium" x-text="r.event_name"></td>
                                             <td>

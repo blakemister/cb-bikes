@@ -305,19 +305,19 @@ class Database:
     # ---- async wrappers --------------------------------------------------
 
     async def query(self, sql: str, params: tuple | None = None) -> list[dict]:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(_executor, self._query_sync, sql, params)
 
     async def scalar(self, sql: str, params: tuple | None = None):
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(_executor, self._scalar_sync, sql, params)
 
     async def execute(self, sql: str, params: tuple | None = None) -> int:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(_executor, self._execute_sync, sql, params)
 
     async def execute_return_id(self, sql: str, params: tuple | None = None) -> int:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(_executor, self._execute_return_id_sync, sql, params)
 
     async def health_check(self) -> bool:

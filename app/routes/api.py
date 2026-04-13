@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, HTTPException, Query
 from app.database import db
 from app.models import CustomerCreate, SaleCreate, HealthResponse
@@ -18,53 +20,55 @@ async def health():
 # ---------------------------------------------------------------------------
 @router.get("/api/dashboard")
 async def dashboard():
-    customers = await db.scalar("SELECT COUNT(*) FROM Customer")
-    products = await db.scalar("SELECT COUNT(*) FROM Product")
-    employees = await db.scalar("SELECT COUNT(*) FROM Employee")
-    sales_count = await db.scalar("SELECT COUNT(*) FROM Sale")
-    total_revenue = await db.scalar(
-        "SELECT ISNULL(SUM(li.Quantity * li.UnitPrice), 0) FROM SaleLineItem li"
-    )
-    bw_participants = await db.scalar("SELECT COUNT(*) FROM Participant")
-    avg_sale = await db.scalar(
-        "SELECT CASE WHEN COUNT(DISTINCT s.SaleID) > 0 "
-        "THEN SUM(li.Quantity * li.UnitPrice) / COUNT(DISTINCT s.SaleID) ELSE 0 END "
-        "FROM Sale s JOIN SaleLineItem li ON s.SaleID = li.SaleID"
-    )
-
-    revenue_by_location = await db.query(
-        "SELECT l.LocationName AS location_name, "
-        "SUM(li.Quantity * li.UnitPrice) AS revenue "
-        "FROM Location l "
-        "LEFT JOIN Sale s ON l.LocationID = s.LocationID "
-        "LEFT JOIN SaleLineItem li ON s.SaleID = li.SaleID "
-        "GROUP BY l.LocationName "
-        "ORDER BY revenue DESC"
+    customers, products, employees, sales_count, total_revenue, bw_participants, avg_sale = (
+        await asyncio.gather(
+            db.scalar("SELECT COUNT(*) FROM Customer"),
+            db.scalar("SELECT COUNT(*) FROM Product"),
+            db.scalar("SELECT COUNT(*) FROM Employee"),
+            db.scalar("SELECT COUNT(*) FROM Sale"),
+            db.scalar("SELECT ISNULL(SUM(li.Quantity * li.UnitPrice), 0) FROM SaleLineItem li"),
+            db.scalar("SELECT COUNT(*) FROM Participant"),
+            db.scalar(
+                "SELECT CASE WHEN COUNT(DISTINCT s.SaleID) > 0 "
+                "THEN SUM(li.Quantity * li.UnitPrice) / COUNT(DISTINCT s.SaleID) ELSE 0 END "
+                "FROM Sale s JOIN SaleLineItem li ON s.SaleID = li.SaleID"
+            ),
+        )
     )
 
-    revenue_by_type = await db.query(
-        "SELECT p.ProductType AS product_type, "
-        "SUM(li.Quantity * li.UnitPrice) AS revenue "
-        "FROM SaleLineItem li "
-        "JOIN Product p ON li.ProductID = p.ProductID "
-        "GROUP BY p.ProductType "
-        "ORDER BY revenue DESC"
-    )
-
-    recent_sales = await db.query(
-        "SELECT TOP 10 s.SaleID, s.SaleDate, "
-        "c.FirstName + ' ' + c.LastName AS CustomerName, "
-        "e.FirstName + ' ' + e.LastName AS EmployeeName, "
-        "l.LocationName, "
-        "SUM(li.Quantity * li.UnitPrice) AS Total "
-        "FROM Sale s "
-        "JOIN Customer c ON s.CustomerID = c.CustomerID "
-        "JOIN Employee e ON s.EmployeeID = e.EmployeeID "
-        "JOIN Location l ON s.LocationID = l.LocationID "
-        "JOIN SaleLineItem li ON s.SaleID = li.SaleID "
-        "GROUP BY s.SaleID, s.SaleDate, c.FirstName, c.LastName, "
-        "e.FirstName, e.LastName, l.LocationName "
-        "ORDER BY s.SaleDate DESC"
+    revenue_by_location, revenue_by_type, recent_sales = await asyncio.gather(
+        db.query(
+            "SELECT l.LocationName AS location_name, "
+            "SUM(li.Quantity * li.UnitPrice) AS revenue "
+            "FROM Location l "
+            "LEFT JOIN Sale s ON l.LocationID = s.LocationID "
+            "LEFT JOIN SaleLineItem li ON s.SaleID = li.SaleID "
+            "GROUP BY l.LocationName "
+            "ORDER BY revenue DESC"
+        ),
+        db.query(
+            "SELECT p.ProductType AS product_type, "
+            "SUM(li.Quantity * li.UnitPrice) AS revenue "
+            "FROM SaleLineItem li "
+            "JOIN Product p ON li.ProductID = p.ProductID "
+            "GROUP BY p.ProductType "
+            "ORDER BY revenue DESC"
+        ),
+        db.query(
+            "SELECT TOP 10 s.SaleID, s.SaleDate, "
+            "c.FirstName + ' ' + c.LastName AS CustomerName, "
+            "e.FirstName + ' ' + e.LastName AS EmployeeName, "
+            "l.LocationName, "
+            "SUM(li.Quantity * li.UnitPrice) AS Total "
+            "FROM Sale s "
+            "JOIN Customer c ON s.CustomerID = c.CustomerID "
+            "JOIN Employee e ON s.EmployeeID = e.EmployeeID "
+            "JOIN Location l ON s.LocationID = l.LocationID "
+            "JOIN SaleLineItem li ON s.SaleID = li.SaleID "
+            "GROUP BY s.SaleID, s.SaleDate, c.FirstName, c.LastName, "
+            "e.FirstName, e.LastName, l.LocationName "
+            "ORDER BY s.SaleDate DESC"
+        ),
     )
 
     rev = float(total_revenue) if total_revenue else 0
@@ -192,9 +196,10 @@ async def get_product(product_id: int):
         raise HTTPException(status_code=404, detail="Product not found")
 
     product = rows[0]
+    ptype = product.get("product_type")
 
-    # Fetch subtype attributes
-    if product.get("ProductType") == "Bike":
+    # Fetch subtype attributes nested under a details key
+    if ptype == "Bike":
         bike_rows = await db.query(
             "SELECT b.FrameMaterial, b.FrameSize, b.BuildKit, "
             "b.SuspensionType, b.Drivetrain "
@@ -202,21 +207,21 @@ async def get_product(product_id: int):
             (product_id,),
         )
         if bike_rows:
-            product.update(bike_rows[0])
-    elif product.get("ProductType") == "Clothing":
+            product["bike_details"] = bike_rows[0]
+    elif ptype == "Clothing":
         cloth_rows = await db.query(
             "SELECT c.Size FROM Clothing c WHERE c.ProductID = ?",
             (product_id,),
         )
         if cloth_rows:
-            product.update(cloth_rows[0])
-    elif product.get("ProductType") == "Part":
+            product["clothing_details"] = cloth_rows[0]
+    elif ptype == "Part":
         part_rows = await db.query(
             "SELECT pt.Weight FROM Part pt WHERE pt.ProductID = ?",
             (product_id,),
         )
         if part_rows:
-            product.update(part_rows[0])
+            product["part_details"] = part_rows[0]
 
     return product
 

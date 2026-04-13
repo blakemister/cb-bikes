@@ -48,7 +48,7 @@ async function renderProducts(container) {
                             </thead>
                             <tbody>
                                 <template x-for="p in filtered()" :key="p.product_id">
-                                    <tr class="cursor-pointer" @click="expanded === p.product_id ? expanded = null : expanded = p.product_id">
+                                    <tr class="cursor-pointer" @click="toggleExpand(p.product_id)">
                                         <td>
                                             <div class="font-medium" x-text="p.product_name"></div>
                                             <div class="text-xs text-text-muted" x-show="p.description" x-text="p.description"></div>
@@ -130,6 +130,21 @@ function productsPage() {
 
         getProduct(id) {
             return this.products.find(p => p.product_id === id);
+        },
+
+        async toggleExpand(id) {
+            if (this.expanded === id) {
+                this.expanded = null;
+                return;
+            }
+            this.expanded = id;
+            const prod = this.getProduct(id);
+            if (prod && prod.product_type === 'Bike' && !prod.bike_details) {
+                try {
+                    const detail = await API.get(`products/${id}`);
+                    if (detail.bike_details) prod.bike_details = detail.bike_details;
+                } catch { /* ignore */ }
+            }
         },
     };
 }

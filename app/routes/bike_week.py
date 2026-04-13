@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date
 
 from fastapi import APIRouter, HTTPException
@@ -10,11 +11,10 @@ router = APIRouter()
 @router.get("/api/bike-week")
 async def bike_week_combined():
     """Combined endpoint returning all Bike Week data in one call."""
-    overview = await bike_week_overview()
-    participants = await list_participants()
-    events = await list_events()
-    results = await race_results()
-    guardians = await list_guardians()
+    overview, participants, events, results, guardians = await asyncio.gather(
+        bike_week_overview(), list_participants(), list_events(),
+        race_results(), list_guardians(),
+    )
     return {
         "kpis": overview,
         "participants": participants,
@@ -103,7 +103,7 @@ async def race_results():
 async def list_guardians():
     """List all guardians for the registration form dropdown."""
     return await db.query(
-        "SELECT GuardianID, FirstName + ' ' + LastName AS Name "
+        "SELECT GuardianID AS id, FirstName + ' ' + LastName AS name "
         "FROM Guardian ORDER BY LastName"
     )
 
