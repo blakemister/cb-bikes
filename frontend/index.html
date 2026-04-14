@@ -230,8 +230,9 @@
 
         <!-- Main content area -->
         <main
-            class="flex-1 min-w-0 transition-all duration-200"
-            :class="sqlPanelOpen ? 'lg:mr-[360px]' : ''"
+            class="flex-1 min-w-0"
+            :class="sqlPanelResizing ? '' : 'transition-all duration-200'"
+            :style="sqlPanelOpen && window.innerWidth >= 1024 ? ('margin-right: ' + sqlPanelWidth + 'px') : ''"
         >
             <div class="max-w-[1200px] mx-auto p-6">
                 <div id="page-content">
@@ -251,8 +252,18 @@
             x-transition:leave="transition-transform duration-200"
             x-transition:leave-start="translate-x-0"
             x-transition:leave-end="translate-x-full"
-            class="fixed top-16 right-0 w-[360px] h-[calc(100vh-4rem)] bg-terminal-bg border-l border-terminal-border z-20 flex flex-col"
+            :style="'width: ' + sqlPanelWidth + 'px'"
+            class="fixed top-16 right-0 h-[calc(100vh-4rem)] bg-terminal-bg border-l border-terminal-border z-20 flex flex-col"
         >
+            <!-- Resize handle (left edge) -->
+            <div
+                @mousedown="startSqlPanelResize($event)"
+                @touchstart="startSqlPanelResize($event)"
+                @dblclick="resetSqlPanelWidth()"
+                class="absolute top-0 -left-1 h-full w-2 cursor-col-resize hover:bg-blue-500/40 active:bg-blue-500/60 transition-colors z-30 select-none"
+                style="touch-action: none;"
+                title="Drag to resize · double-click to reset"
+            ></div>
             <!-- Console header -->
             <div class="flex items-center justify-between px-4 py-3 border-b border-terminal-border bg-terminal-elevated">
                 <div class="flex items-center gap-2">

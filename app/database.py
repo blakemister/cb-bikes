@@ -39,6 +39,7 @@ def _normalize_row(row: dict) -> dict:
 # ---------------------------------------------------------------------------
 _sql_log: deque[dict] = deque(maxlen=500)
 _ws_clients: set[asyncio.Queue] = set()
+_main_loop: asyncio.AbstractEventLoop | None = None
 
 
 async def broadcast_sql_entry(entry: dict):
@@ -49,7 +50,7 @@ async def broadcast_sql_entry(entry: dict):
             q.put_nowait(entry)
         except asyncio.QueueFull:
             dead.add(q)
-    _ws_clients -= dead
+    _ws_clients.difference_update(dead)
 
 
 def subscribe() -> asyncio.Queue:
@@ -138,14 +139,14 @@ _executor = ThreadPoolExecutor(max_workers=4)
 
 
 def _fire_broadcast(entry: dict):
-    """Schedule broadcast_sql_entry onto the running event loop from a worker thread."""
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
+    """Schedule broadcast_sql_entry onto the main event loop from a worker thread."""
+    loop = _main_loop
+    if loop is not None and loop.is_running():
+        try:
             asyncio.run_coroutine_threadsafe(broadcast_sql_entry(entry), loop)
             return
-    except RuntimeError:
-        pass
+        except RuntimeError:
+            pass
     # Fallback: append directly without async broadcast
     _sql_log.append(entry)
 
@@ -305,19 +306,27 @@ class Database:
     # ---- async wrappers --------------------------------------------------
 
     async def query(self, sql: str, params: tuple | None = None) -> list[dict]:
+        global _main_loop
         loop = asyncio.get_running_loop()
+        _main_loop = loop
         return await loop.run_in_executor(_executor, self._query_sync, sql, params)
 
     async def scalar(self, sql: str, params: tuple | None = None):
+        global _main_loop
         loop = asyncio.get_running_loop()
+        _main_loop = loop
         return await loop.run_in_executor(_executor, self._scalar_sync, sql, params)
 
     async def execute(self, sql: str, params: tuple | None = None) -> int:
+        global _main_loop
         loop = asyncio.get_running_loop()
+        _main_loop = loop
         return await loop.run_in_executor(_executor, self._execute_sync, sql, params)
 
     async def execute_return_id(self, sql: str, params: tuple | None = None) -> int:
+        global _main_loop
         loop = asyncio.get_running_loop()
+        _main_loop = loop
         return await loop.run_in_executor(_executor, self._execute_return_id_sync, sql, params)
 
     async def health_check(self) -> bool:
